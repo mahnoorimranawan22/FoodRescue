@@ -53,8 +53,9 @@ jobs:
           set -euo pipefail
           REPO="https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
 
-          # Clone existing gh-pages (keeps its workflow file + history intact)
-          git clone --depth 1 --branch gh-pages "$REPO" pages-repo
+          # Clone existing gh-pages in FULL — pushing from a shallow clone
+          # fails with "shallow update not allowed". The repo is tiny.
+          git clone --branch gh-pages "$REPO" pages-repo
           cd pages-repo
 
           # Replace everything except VCS internals and the branch's own
@@ -71,5 +72,6 @@ jobs:
             echo "No changes to deploy."
           else
             git commit -m "Deploy client build from main@${{ github.sha }}"
+            set -x
             git push origin gh-pages
           fi
