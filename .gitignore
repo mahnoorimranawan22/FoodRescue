@@ -1,0 +1,10 @@
+# FoodRescue — root
+# (client/ and server/ have their own .gitignore files)
+node_modules/
+*.log
+*.log.err
+.env
+.env.local
+
+# Codebuff/Freebuff workspace internals
+.freebuff/

@@ -1,0 +1,31 @@
+{
+  "name": "foodrescue-server",
+  "private": true,
+  "version": "0.1.0",
+  "description": "FoodRescue — Give Good Food Another Chance (API server)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "db": "node scripts/dev-db.js",
+    "seed": "node scripts/seed.js",
+    "verify:models": "node scripts/verify-models.js"
+  },
+  "keywords": [
+    "foodrescue",
+    "mongoose",
+    "mongodb",
+    "express"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.9.5"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^10.1.4"
+  }
+}
