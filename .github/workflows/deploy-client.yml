@@ -63,7 +63,7 @@ jobs:
           find . -mindepth 1 -maxdepth 1 \
             ! -name .git ! -name .github -exec rm -rf {} +
           cp -r ../dist/. .
-          cp dist/index.html 404.html
+          cp index.html 404.html # SPA fallback — same entry point
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
