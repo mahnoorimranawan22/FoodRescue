@@ -1,9 +1,13 @@
 name: Deploy client to GitHub Pages
 
-# Builds the FoodRescue React client and publishes it to GitHub Pages.
-# The app runs fully in demo mode there (the API client falls back to a local
-# dataset + localStorage when no backend is reachable), so the deployed site
-# is fully interactive without any server deployment.
+# Builds the client and syncs it into the `gh-pages` branch, where the
+# branch-native "Deploy site (gh-pages branch)" workflow publishes it via
+# GitHub Pages. (deploy-pages cannot run from main: the auto-created
+# github-pages environment only permits the gh-pages branch.)
+#
+# The deployed site runs fully in demo mode (the API client falls back to a
+# local dataset + localStorage when no backend is reachable), so it is fully
+# interactive without a server.
 on:
   push:
     branches: [main]
@@ -13,17 +17,15 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write # push the built site to gh-pages
+  pages: read
 
-# Allow only one concurrent deployment, skip runs queued while one is live.
 concurrency:
-  group: pages
+  group: gh-pages-sync
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-and-sync:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,30 +40,36 @@ jobs:
         working-directory: client
         run: npm ci
 
-      # enablement: true turns on Pages (GitHub Actions source) automatically,
-      # so no manual Settings → Pages step is ever needed.
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      - name: Build
+      - name: Build (subpath base for Pages)
         working-directory: client
         run: npm run build
         env:
-          # The client is served from a subpath (/<repo>/), so base must match.
           VITE_BASE: /FoodRescue/
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: client/dist
+      - name: Push build to gh-pages
+        working-directory: client
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPO="https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          # Clone existing gh-pages (keeps its workflow file + history intact)
+          git clone --depth 1 --branch gh-pages "$REPO" pages-repo
+          cd pages-repo
+
+          # Replace everything except VCS internals and the branch's own
+          # Pages-deploy workflow, then add the fresh build + SPA fallback.
+          find . -mindepth 1 -maxdepth 1 \
+            ! -name .git ! -name .github -exec rm -rf {} +
+          cp -r ../dist/. .
+          cp dist/index.html 404.html
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to deploy."
+          else
+            git commit -m "Deploy client build from main@${{ github.sha }}"
+            git push origin gh-pages
+          fi
