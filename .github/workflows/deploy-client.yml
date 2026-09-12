@@ -38,6 +38,12 @@ jobs:
         working-directory: client
         run: npm ci
 
+      # enablement: true turns on Pages (GitHub Actions source) automatically,
+      # so no manual Settings → Pages step is ever needed.
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
       - name: Build
         working-directory: client
         run: npm run build
