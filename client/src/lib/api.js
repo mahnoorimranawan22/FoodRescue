@@ -5,9 +5,13 @@
  * http://localhost:5001/api). If the server is offline, every call
  * transparently falls back to a local demo dataset + localStorage
  * persistence, so the UI stays fully functional for demos.
+ *
+ * International demo model: listings carry coordinates across 4 cities,
+ * dietary/safety tags, provider ratings and weights (for CO₂ math).
  */
 
 import { CATEGORY_IMAGES, HERO_IMAGES } from "./images";
+import { CITIES, haversineKm } from "./geo";
 
 const API_BASE =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL) ||
@@ -16,6 +20,9 @@ const API_BASE =
 const LS_LISTINGS = "foodrescue.demo.listings";
 const LS_CLAIMS = "foodrescue.demo.claims";
 const LS_SESSION = "foodrescue.session";
+const LS_ALERTS = "foodrescue.alerts";
+const LS_STATS = "foodrescue.demo.stats";
+const LS_RATINGS = "foodrescue.demo.ratings";
 
 /* ─── low-level fetch with timeout ─────────────────────────────────── */
 
@@ -50,6 +57,9 @@ async function apiFetch(path, options = {}) {
 
 /* ─── demo store (localStorage) ────────────────────────────────────── */
 
+const hr = (n) => new Date(Date.now() + n * 36e5).toISOString();
+
+// Seed listings spread across the four launch cities with dietary tags.
 const DEMO_LISTINGS = [
   {
     _id: "demo-1",
@@ -58,15 +68,17 @@ const DEMO_LISTINGS = [
     imageUrl: HERO_IMAGES.bread,
     quantity: 12,
     unit: "loaves",
+    weightKg: 4.8,
+    tags: ["vegetarian"],
     providerName: "Corner Bakehouse",
-    distanceKm: 0.8,
+    cityId: "london",
+    location: { type: "Point", coordinates: [-0.1426, 51.5014] },
+    rating: 4.8,
+    reviewCount: 24,
     urgencyLevel: "expiring_soon",
     status: "available",
-    pickupWindow: {
-      start: new Date(Date.now() + 36e5).toISOString(),
-      end: new Date(Date.now() + 9e6).toISOString(),
-    },
-    expiryEstimate: new Date(Date.now() + 1.4e8).toISOString(),
+    pickupWindow: { start: hr(1), end: hr(5) },
+    expiryEstimate: hr(40),
     createdAt: new Date().toISOString(),
   },
   {
@@ -76,15 +88,17 @@ const DEMO_LISTINGS = [
     imageUrl: HERO_IMAGES.lasagna,
     quantity: 40,
     unit: "portions",
+    weightKg: 12,
+    tags: ["vegetarian", "keep refrigerated"],
     providerName: "Green Fork Catering",
-    distanceKm: 1.6,
+    cityId: "london",
+    location: { type: "Point", coordinates: [-0.1218, 51.5074] },
+    rating: 4.9,
+    reviewCount: 57,
     urgencyLevel: "urgent",
     status: "available",
-    pickupWindow: {
-      start: new Date(Date.now() + 18e5).toISOString(),
-      end: new Date(Date.now() + 10.8e6).toISOString(),
-    },
-    expiryEstimate: new Date(Date.now() + 2.6e8).toISOString(),
+    pickupWindow: { start: hr(0.5), end: hr(3) },
+    expiryEstimate: hr(72),
     createdAt: new Date().toISOString(),
   },
   {
@@ -94,15 +108,17 @@ const DEMO_LISTINGS = [
     imageUrl: CATEGORY_IMAGES["Produce"],
     quantity: 8,
     unit: "crates",
+    weightKg: 32,
+    tags: ["vegan", "vegetarian", "gluten-free"],
     providerName: "Riverside Market",
-    distanceKm: 2.4,
+    cityId: "nyc",
+    location: { type: "Point", coordinates: [-74.0085, 40.7057] },
+    rating: 4.7,
+    reviewCount: 31,
     urgencyLevel: "normal",
     status: "available",
-    pickupWindow: {
-      start: new Date(Date.now() + 72e5).toISOString(),
-      end: new Date(Date.now() + 2.6e7).toISOString(),
-    },
-    expiryEstimate: new Date(Date.now() + 2.6e8).toISOString(),
+    pickupWindow: { start: hr(2), end: hr(8) },
+    expiryEstimate: hr(72),
     createdAt: new Date().toISOString(),
   },
   {
@@ -112,33 +128,37 @@ const DEMO_LISTINGS = [
     imageUrl: CATEGORY_IMAGES["Dairy"],
     quantity: 25,
     unit: "items",
+    weightKg: 9,
+    tags: ["vegetarian", "keep refrigerated"],
     providerName: "Meadow Dairy Co.",
-    distanceKm: 3.1,
+    cityId: "nyc",
+    location: { type: "Point", coordinates: [-73.9942, 40.7135] },
+    rating: 4.6,
+    reviewCount: 18,
     urgencyLevel: "expiring_soon",
     status: "available",
-    pickupWindow: {
-      start: new Date(Date.now() + 54e5).toISOString(),
-      end: new Date(Date.now() + 1.8e7).toISOString(),
-    },
-    expiryEstimate: new Date(Date.now() + 1.7e8).toISOString(),
+    pickupWindow: { start: hr(1.5), end: hr(5) },
+    expiryEstimate: hr(48),
     createdAt: new Date().toISOString(),
   },
   {
     _id: "demo-5",
-    title: "Canned goods & dry staples",
-    category: "Packaged Goods",
-    imageUrl: CATEGORY_IMAGES["Packaged Goods"],
-    quantity: 60,
-    unit: "items",
-    providerName: "Harvest Pantry",
-    distanceKm: 4.2,
-    urgencyLevel: "normal",
+    title: "Halal ready-meals — chicken biryani",
+    category: "Prepared Food",
+    imageUrl: CATEGORY_IMAGES["Prepared Food"],
+    quantity: 35,
+    unit: "portions",
+    weightKg: 14,
+    tags: ["halal", "keep refrigerated"],
+    providerName: "Karachi Community Kitchen",
+    cityId: "karachi",
+    location: { type: "Point", coordinates: [67.0099, 24.8428] },
+    rating: 5.0,
+    reviewCount: 12,
+    urgencyLevel: "urgent",
     status: "available",
-    pickupWindow: {
-      start: new Date(Date.now() + 9e6).toISOString(),
-      end: new Date(Date.now() + 4.3e7).toISOString(),
-    },
-    expiryEstimate: new Date(Date.now() + 8.6e9).toISOString(),
+    pickupWindow: { start: hr(1), end: hr(2.5) },
+    expiryEstimate: hr(8),
     createdAt: new Date().toISOString(),
   },
   {
@@ -148,15 +168,57 @@ const DEMO_LISTINGS = [
     imageUrl: HERO_IMAGES.bagels,
     quantity: 30,
     unit: "pieces",
+    weightKg: 6,
+    tags: ["vegetarian"],
     providerName: "Corner Bakehouse",
-    distanceKm: 0.9,
+    cityId: "london",
+    location: { type: "Point", coordinates: [-0.1419, 51.5019] },
+    rating: 4.8,
+    reviewCount: 24,
     urgencyLevel: "urgent",
     status: "available",
-    pickupWindow: {
-      start: new Date(Date.now() + 18e5).toISOString(),
-      end: new Date(Date.now() + 7.2e6).toISOString(),
-    },
-    expiryEstimate: new Date(Date.now() + 1.1e8).toISOString(),
+    pickupWindow: { start: hr(0.5), end: hr(2) },
+    expiryEstimate: hr(30),
+    createdAt: new Date().toISOString(),
+  },
+  {
+    _id: "demo-7",
+    title: "Canned goods & dry staples",
+    category: "Packaged Goods",
+    imageUrl: CATEGORY_IMAGES["Packaged Goods"],
+    quantity: 60,
+    unit: "items",
+    weightKg: 45,
+    tags: ["vegan", "vegetarian", "gluten-free"],
+    providerName: "Dubai Food Bank Hub",
+    cityId: "dubai",
+    location: { type: "Point", coordinates: [55.2708, 25.2048] },
+    rating: 4.9,
+    reviewCount: 40,
+    urgencyLevel: "normal",
+    status: "available",
+    pickupWindow: { start: hr(2.5), end: hr(12) },
+    expiryEstimate: hr(240),
+    createdAt: new Date().toISOString(),
+  },
+  {
+    _id: "demo-8",
+    title: "Fresh fruit bowls — iftar surplus",
+    category: "Prepared Food",
+    imageUrl: CATEGORY_IMAGES["Produce"],
+    quantity: 50,
+    unit: "portions",
+    weightKg: 15,
+    tags: ["vegan", "vegetarian", "gluten-free", "halal"],
+    providerName: "Dubai Iftar Initiative",
+    cityId: "dubai",
+    location: { type: "Point", coordinates: [55.2925, 25.2356] },
+    rating: 4.9,
+    reviewCount: 22,
+    urgencyLevel: "expiring_soon",
+    status: "available",
+    pickupWindow: { start: hr(2), end: hr(6) },
+    expiryEstimate: hr(12),
     createdAt: new Date().toISOString(),
   },
 ];
@@ -192,8 +254,9 @@ function writeLS(key, value) {
 }
 
 async function seedDemo() {
+  // Re-seed when the stored demo data predates a schema change (e.g. tags)
   const existing = readLS(LS_LISTINGS, null);
-  if (!existing) writeLS(LS_LISTINGS, DEMO_LISTINGS);
+  if (!existing || !existing[0]?.tags) writeLS(LS_LISTINGS, DEMO_LISTINGS);
   const existingClaims = readLS(LS_CLAIMS, null);
   if (!existingClaims) writeLS(LS_CLAIMS, DEMO_CLAIMS);
 }
@@ -214,10 +277,68 @@ async function withFallback(liveFn, demoFn) {
   }
 }
 
+/* ─── demo helpers ─────────────────────────────────────────────────── */
+
+/** Demo distance: haversine from the viewer's city to each listing. */
+function withDistances(listings, cityId) {
+  const city = CITIES.find((c) => c.id === cityId) || CITIES[0];
+  return listings.map((l) => {
+    if (l.distanceKm != null) return l;
+    const c = l.location?.coordinates;
+    if (!c) return l;
+    const [lng, lat] = c;
+    return {
+      ...l,
+      distanceKm:
+        Math.round(
+          haversineKm([city.lat, city.lng], [lat, lng]) * 10
+        ) / 10,
+    };
+  });
+}
+
+function bumpStats(patch) {
+  const stats = readLS(LS_STATS, {});
+  for (const [k, v] of Object.entries(patch)) {
+    stats[k] = (stats[k] || 0) + v;
+  }
+  writeLS(LS_STATS, stats);
+}
+
+/** Persisted saved-search alerts (smart notifications). */
+export const alerts = {
+  all() {
+    return readLS(LS_ALERTS, []);
+  },
+  save(alert) {
+    const list = readLS(LS_ALERTS, []);
+    const entry = { id: `alert-${Date.now()}`, ...alert };
+    writeLS(LS_ALERTS, [entry, ...list].slice(0, 12));
+    return entry;
+  },
+  remove(id) {
+    writeLS(
+      LS_ALERTS,
+      readLS(LS_ALERTS, []).filter((a) => a.id !== id)
+    );
+  },
+  /** Matches a listing against a saved alert's filters. */
+  matches(alert, listing) {
+    if (alert.cityId && alert.cityId !== "all" && listing.cityId !== alert.cityId)
+      return false;
+    if (alert.category && alert.category !== "all" && listing.category !== alert.category)
+      return false;
+    if (alert.urgency && alert.urgency !== "all" && listing.urgencyLevel !== alert.urgency)
+      return false;
+    if (alert.tag && !listing.tags?.includes(alert.tag)) return false;
+    return true;
+  },
+};
+
 /* ─── public API ───────────────────────────────────────────────────── */
 
 export const api = {
-  /** GET /listings — Discover feed with optional filters */
+  /** GET /listings — Discover feed with optional filters (+cityId) */
   getListings(filters = {}) {
     return withFallback(
       () => {
@@ -227,12 +348,18 @@ export const api = {
         return apiFetch(`/listings?${params}`);
       },
       () => {
-        let items = readLS(LS_LISTINGS, DEMO_LISTINGS);
+        let items = withDistances(readLS(LS_LISTINGS, DEMO_LISTINGS), filters.cityId);
+        if (filters.cityId && filters.cityId !== "all") {
+          items = items.filter((l) => l.cityId === filters.cityId);
+        }
         if (filters.category && filters.category !== "all") {
           items = items.filter((l) => l.category === filters.category);
         }
         if (filters.urgency && filters.urgency !== "all") {
           items = items.filter((l) => l.urgencyLevel === filters.urgency);
+        }
+        if (filters.tag) {
+          items = items.filter((l) => l.tags?.includes(filters.tag));
         }
         if (filters.search) {
           const q = filters.search.toLowerCase();
@@ -257,6 +384,10 @@ export const api = {
           _id: `demo-${Date.now()}`,
           status: "available",
           urgencyLevel: payload.urgencyLevel || "normal",
+          tags: payload.tags || [],
+          rating: 5,
+          reviewCount: 0,
+          cityId: payload.cityId || "london",
           createdAt: new Date().toISOString(),
           ...payload,
         };
@@ -321,6 +452,44 @@ export const api = {
         claim.status = "picked_up";
         claim.pickedUpAt = new Date().toISOString();
         writeLS(LS_CLAIMS, claims);
+        // Completed rescue → impact stats grow (weight → CO₂ math)
+        const items = readLS(LS_LISTINGS, DEMO_LISTINGS);
+        const listing = items.find((l) => l._id === claim.foodListing);
+        bumpStats({
+          mealsRescued: Number(listing?.quantity) || 1,
+          co2SavedTons: (Number(listing?.weightKg) || 2.5) * 0.0025,
+        });
+        return { claim };
+      }
+    );
+  },
+
+  /** POST /claims/:id/review — rate a completed pickup (idea 9) */
+  reviewClaim(claimId, rating, comment = "") {
+    return withFallback(
+      () =>
+        apiFetch(`/claims/${claimId}/review`, {
+          method: "POST",
+          body: JSON.stringify({ rating, comment }),
+        }),
+      () => {
+        const claims = readLS(LS_CLAIMS, []);
+        const claim = claims.find((c) => c._id === claimId);
+        if (!claim) throw new Error("Claim not found");
+        claim.rating = rating;
+        claim.review = comment;
+        claim.reviewedAt = new Date().toISOString();
+        writeLS(LS_CLAIMS, claims);
+        // Nudge the provider's rolling rating in the demo store
+        const items = readLS(LS_LISTINGS, DEMO_LISTINGS);
+        const listing = items.find((l) => l._id === claim.foodListing);
+        if (listing) {
+          const count = (listing.reviewCount || 0) + 1;
+          const avg = ((listing.rating || 5) * (count - 1) + rating) / count;
+          listing.reviewCount = count;
+          listing.rating = Math.round(avg * 10) / 10;
+          writeLS(LS_LISTINGS, items);
+        }
         return { claim };
       }
     );
@@ -340,6 +509,7 @@ export const api = {
           name: email.split("@")[0].replace(/[._]/g, " "),
           email,
           role: email.startsWith("provider") ? "provider" : "recipient",
+          country: "GB",
         };
         const token = `demo.${btoa(email)}.token`;
         localStorage.setItem("foodrescue.token", token);
@@ -362,6 +532,7 @@ export const api = {
           name: payload.name,
           email: payload.email,
           role: payload.role || "recipient",
+          country: payload.country || null,
         };
         const token = `demo.${btoa(payload.email)}.token`;
         localStorage.setItem("foodrescue.token", token);
@@ -395,18 +566,70 @@ export const api = {
       () => {
         const items = readLS(LS_LISTINGS, DEMO_LISTINGS);
         const claims = readLS(LS_CLAIMS, []);
+        const bonus = readLS(LS_STATS, {});
         const portions = items.reduce(
           (sum, l) => sum + (Number(l.quantity) || 0),
           60 + claims.filter((c) => c.status === "picked_up").length * 12
         );
         return {
-          mealsRescued: 12480 + portions,
+          mealsRescued: 12480 + portions + (bonus.mealsRescued || 0),
           partners: 96,
-          cities: 4,
-          co2SavedTons: 18.4,
+          cities: CITIES.length,
+          co2SavedTons:
+            Math.round((18.4 + (bonus.co2SavedTons || 0)) * 10) / 10,
+          listingsAvailable: items.filter((l) => l.status === "available")
+            .length,
         };
       }
     );
+  },
+
+  /**
+   * Live feed (idea 6). Uses Socket.io against the real server; falls back
+   * to light polling in demo mode so the UI still feels alive. Returns a
+   * disconnect function.
+   */
+  subscribeFeed({ onUpdate, onError }) {
+    let dispose = () => {};
+    (async () => {
+      try {
+        const { io } = await import("socket.io-client");
+        // Derive ws origin from API_BASE (http://localhost:5001/api → :5001)
+        const wsOrigin = API_BASE.replace(/\/api\/?$/, "");
+        const socket = io(wsOrigin, { transports: ["websocket"], timeout: 4000 });
+        let connected = false;
+        socket.on("connect", () => {
+          connected = true;
+        });
+        socket.on("listings:update", (payload) => onUpdate?.(payload));
+        socket.on("connect_error", () => {
+          if (!connected) startPolling();
+        });
+        dispose = () => socket.close();
+      } catch {
+        startPolling();
+      }
+    })();
+
+    function startPolling() {
+      let stop = false;
+      const tick = async () => {
+        if (stop) return;
+        try {
+          const { listings } = await api.getListings({});
+          onUpdate?.({ source: "poll", listings });
+        } catch (err) {
+          onError?.(err);
+        }
+        if (!stop) setTimeout(tick, 15000);
+      };
+      tick();
+      dispose = () => {
+        stop = true;
+      };
+    }
+
+    return () => dispose();
   },
 };
 

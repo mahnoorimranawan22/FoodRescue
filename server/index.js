@@ -5,8 +5,10 @@
  * need Mongo return clean 503s until it is reachable.
  */
 const express = require("express");
+const http = require("http");
 const config = require("./config");
 const { connectDB, isConnected } = require("./config/db");
+const { initRealtime } = require("./realtime");
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -68,7 +70,10 @@ async function start() {
     );
   }
 
-  app.listen(config.PORT, () => {
+  // idea 6 — attach Socket.io to the HTTP server for the live feed
+  const server = http.createServer(app);
+  initRealtime(server);
+  server.listen(config.PORT, () => {
     console.log(`[api] FoodRescue API listening on http://localhost:${config.PORT}`);
   });
 }

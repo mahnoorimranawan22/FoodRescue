@@ -37,6 +37,34 @@
 }
 
 @layer components {
+  /* ─── Dark mode surfaces (class strategy, toggled on <html>) ───────── */
+  /* Re-tint the shared glass surfaces so components need no per-file edits */
+  .dark .glass {
+    @apply border-white/10 bg-night-100/80;
+  }
+  .dark .glass-panel {
+    @apply border-white/10 bg-night-50/70;
+  }
+  .dark input,
+  .dark select {
+    @apply border-white/10 bg-night-100 text-cream-50 placeholder:text-cream-100/40;
+  }
+  .dark .nav-underline::after {
+    background-color: #e06d3b;
+  }
+  /* Dark body + Leaflet tiles re-tinted to the night palette */
+  .dark body {
+    background-color: #131a12;
+  }
+  .dark .leaflet-tile {
+    filter: brightness(0.55) contrast(1.15) saturate(0.75);
+  }
+  .dark .leaflet-popup-content-wrapper,
+  .dark .leaflet-popup-tip {
+    background: #1c241b;
+    color: #faf8f5;
+  }
+
   /* Scroll-triggered reveal: hidden → visible when .is-visible lands */
   .reveal {
     @apply opacity-0;
@@ -96,5 +124,19 @@
 
   .text-balance {
     text-wrap: balance;
+  }
+
+  /* RTL logical helper: mirror the marquee direction under Arabic */
+  [dir="rtl"] .animate-marquee {
+    animation-name: marquee-rtl;
+  }
+}
+
+@keyframes marquee-rtl {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(50%);
   }
 }

@@ -8,6 +8,8 @@
 //
 module.exports = {
   content: ["./index.html", "./src/**/*.{js,jsx,ts,tsx}"],
+  // Class-based dark mode: <html class="dark"> toggled by SettingsContext
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
@@ -27,6 +29,13 @@ module.exports = {
         "warm-orange": {
           500: "#E06D3B",
           600: "#C85A28",
+        },
+        // Night surfaces — deep green-charcoal so brand glows in dark mode
+        night: {
+          50: "#1C241B",
+          100: "#182018",
+          200: "#131A12",
+          300: "#0F140E",
         },
       },
       fontFamily: {

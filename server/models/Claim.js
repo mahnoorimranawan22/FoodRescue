@@ -54,6 +54,18 @@ const claimSchema = new mongoose.Schema(
         message: "pickedUpAt cannot be before claimedAt",
       },
     },
+    // idea 9 — post-pickup rating (1–5) + optional comment from the recipient
+    rating: {
+      type: Number,
+      min: 1,
+      max: 5,
+      validate: {
+        validator: Number.isInteger,
+        message: "rating must be a whole number 1–5",
+      },
+    },
+    review: { type: String, maxlength: 500, trim: true },
+    reviewedAt: { type: Date },
   },
   {
     timestamps: true,

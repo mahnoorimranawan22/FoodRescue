@@ -9,6 +9,7 @@ const mongoose = require("mongoose");
 const FoodListing = require("../models/FoodListing");
 const Claim = require("../models/Claim");
 const { protect } = require("../middleware/auth");
+const { emit } = require("../realtime");
 
 const router = express.Router();
 
@@ -49,6 +50,13 @@ router.post("/", protect, async (req, res, next) => {
     listing.status = "reserved";
     await listing.save();
 
+    // idea 6 — push the update to every connected client instantly
+    emit("listings:update", {
+      type: "claimed",
+      listingId: String(listing._id),
+      status: listing.status,
+    });
+
     const populated = await Claim.findById(claim._id)
       .populate("foodListing", "title")
       .lean();
@@ -71,6 +79,48 @@ router.post("/", protect, async (req, res, next) => {
         .status(409)
         .json({ message: "Someone just claimed this listing — try another!" });
     }
+    return next(err);
+  }
+});
+
+/**
+ * POST /api/claims/:id/review — rate a completed pickup (idea 9).
+ * Updates the listing's rolling provider rating.
+ */
+router.post("/:id/review", protect, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { rating, comment } = req.body || {};
+    const stars = Number(rating);
+    if (!Number.isInteger(stars) || stars < 1 || stars > 5) {
+      return res.status(400).json({ message: "rating must be 1–5" });
+    }
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: "Invalid claim id" });
+    }
+    const claim = await Claim.findOne({ _id: id, recipient: req.user._id });
+    if (!claim) return res.status(404).json({ message: "Claim not found" });
+    if (claim.status !== "picked_up") {
+      return res
+        .status(409)
+        .json({ message: "Only completed pickups can be rated" });
+    }
+    claim.rating = stars;
+    claim.review = String(comment || "").slice(0, 500);
+    claim.reviewedAt = new Date();
+    await claim.save();
+
+    // Rolling average onto the listing (provider's public rating)
+    const listing = await FoodListing.findById(claim.foodListing);
+    if (listing) {
+      const count = (listing.reviewCount || 0) + 1;
+      const avg = ((listing.rating || 0) * (count - 1) + stars) / count;
+      listing.reviewCount = count;
+      listing.rating = Math.round(avg * 10) / 10;
+      await listing.save();
+    }
+    return res.json({ claim });
+  } catch (err) {
     return next(err);
   }
 });
@@ -140,6 +190,11 @@ router.patch("/:id/pickup", protect, async (req, res, next) => {
       { status: "completed" }
     );
 
+    emit("listings:update", {
+      type: "completed",
+      listingId: String(claim.foodListing),
+    });
+
     return res.json({ claim });
   } catch (err) {
     return next(err);
@@ -172,6 +227,13 @@ router.patch("/:id/cancel", protect, async (req, res, next) => {
       { _id: claim.foodListing, status: "reserved" },
       { status: "available" }
     );
+
+    emit("listings:update", {
+      type: "released",
+      listingId: String(claim.foodListing),
+      status: "available",
+    });
+
     return res.json({ claim });
   } catch (err) {
     return next(err);

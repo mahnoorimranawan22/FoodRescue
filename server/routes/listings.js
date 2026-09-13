@@ -7,6 +7,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const FoodListing = require("../models/FoodListing");
 const { protect, authorize } = require("../middleware/auth");
+const { emit } = require("../realtime");
 
 const router = express.Router();
 
@@ -18,14 +19,36 @@ const CATEGORIES = [
   "Packaged Goods",
 ];
 const URGENCY_LEVELS = ["normal", "expiring_soon", "urgent"];
+const CATEGORIES_OF_LISTING = CATEGORIES; // alias for the feed filter check
+const ALLOWED_TAGS = [
+  "vegetarian",
+  "vegan",
+  "halal",
+  "kosher",
+  "gluten-free",
+  "nut-free",
+  "keep refrigerated",
+  "contains allergens",
+];
+// data URLs count against the JSON body limit — cap uploads defensively
+const MAX_IMAGE_CHARS = 700_000;
+
+// Launch cities for the international city filter (idea 15) — keep in
+// sync with client/src/lib/geo.js
+const CITIES = {
+  london: { lat: 51.5074, lng: -0.1278 },
+  nyc: { lat: 40.7128, lng: -74.006 },
+  karachi: { lat: 24.8607, lng: 67.0011 },
+  dubai: { lat: 25.2048, lng: 55.2708 },
+};
 
 // GET /api/listings — public feed with optional filters
 router.get("/", async (req, res, next) => {
   try {
-    const { category, urgency, search, status } = req.query;
+    const { category, urgency, search, status, tag, cityId } = req.query;
     const query = { status: status || "available" };
 
-    if (category && CATEGORIES.includes(category)) query.category = category;
+    if (category && CATEGORIES_OF_LISTING.includes(category)) query.category = category;
     if (urgency && URGENCY_LEVELS.includes(urgency)) {
       query.urgencyLevel = urgency;
     }
@@ -33,6 +56,77 @@ router.get("/", async (req, res, next) => {
       query.$or = [
         { title: { $regex: String(search).slice(0, 80), $options: "i" } },
       ];
+    }
+    // idea 2 — filter by dietary/safety tag
+    if (tag && ALLOWED_TAGS.includes(tag)) {
+      query.tags = tag;
+    }
+
+    // idea 15 — city filter via $geoNear when a known city is requested
+    const city = CITIES[cityId];
+    if (city) {
+      const results = await FoodListing.aggregate([
+        {
+          $geoNear: {
+            near: { type: "Point", coordinates: [city.lng, city.lat] },
+            distanceField: "distanceMeters",
+            maxDistance: 60000, // generous metro radius
+            query,
+            spherical: true,
+          },
+        },
+        {
+          $sort: {
+            urgencyRank: 1,
+            expiryEstimate: 1,
+          },
+        },
+        { $limit: 60 },
+        {
+          $lookup: {
+            from: "users",
+            localField: "provider",
+            foreignField: "_id",
+            as: "provider",
+          },
+        },
+        { $unwind: { path: "$provider", preserveNullAndEmptyArrays: true } },
+      {
+        $addFields: {
+          urgencyRank: {
+            $switch: {
+              branches: [
+                { case: { $eq: ["$urgencyLevel", "urgent"] }, then: 0 },
+                { case: { $eq: ["$urgencyLevel", "expiring_soon"] }, then: 1 },
+              ],
+              default: 2,
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          title: 1,
+          category: 1,
+          quantity: 1,
+          unit: 1,
+          weightKg: 1,
+            tags: 1,
+            rating: 1,
+            reviewCount: 1,
+            imageUrl: 1,
+            urgencyLevel: 1,
+            status: 1,
+            pickupWindow: 1,
+            expiryEstimate: 1,
+            location: 1,
+            createdAt: 1,
+            providerName: { $ifNull: ["$provider.name", "Local provider"] },
+            distanceKm: { $round: [{ $divide: ["$distanceMeters", 1000] }, 1] },
+          },
+        },
+      ]);
+      return res.json({ listings: results });
     }
 
     // Sorting: urgent first, then soonest expiry — matches the index
@@ -131,7 +225,23 @@ router.post("/", protect, authorize("provider", "admin"), async (req, res, next)
       expiryEstimate,
       urgencyLevel,
       location,
+      tags,
+      weightKg,
     } = req.body || {};
+
+    if (imageUrl && String(imageUrl).length > MAX_IMAGE_CHARS) {
+      return res
+        .status(413)
+        .json({ message: "Photo too large — please pick a smaller image" });
+    }
+    if (tags && !Array.isArray(tags)) {
+      return res.status(400).json({ message: "tags must be an array" });
+    }
+    if (tags?.some((tg) => !ALLOWED_TAGS.includes(tg))) {
+      return res
+        .status(400)
+        .json({ message: `tags must be from: ${ALLOWED_TAGS.join(", ")}` });
+    }
 
     if (!CATEGORIES.includes(category)) {
       return res.status(400).json({ message: `category must be one of: ${CATEGORIES.join(", ")}` });
@@ -163,6 +273,15 @@ router.post("/", protect, authorize("provider", "admin"), async (req, res, next)
       expiryEstimate,
       urgencyLevel,
       location,
+      tags: Array.isArray(tags) ? tags : [],
+      weightKg: Number(weightKg) || 0,
+    });
+
+    // idea 6 — instant push to every open Discover feed
+    emit("listings:update", {
+      type: "new",
+      listingId: String(listing._id),
+      title: listing.title,
     });
 
     return res.status(201).json({ listing });
