@@ -162,6 +162,7 @@ async function main() {
       expiryEstimate: hours(40),
       urgencyLevel: "expiring_soon",
       location: { type: "Point", coordinates: [-0.1426, 51.5014] },
+      pickupAddress: "42 Portobello Road, Notting Hill, London W11",
     },
     {
       provider: catering._id,
@@ -178,6 +179,7 @@ async function main() {
       expiryEstimate: hours(72),
       urgencyLevel: "urgent",
       location: { type: "Point", coordinates: [-0.1218, 51.5074] },
+      pickupAddress: "8 Southwark Street, Bankside, London SE1",
     },
     {
       provider: bakehouse._id,
@@ -194,6 +196,7 @@ async function main() {
       expiryEstimate: hours(30),
       urgencyLevel: "urgent",
       location: { type: "Point", coordinates: [-0.1419, 51.5019] },
+      pickupAddress: "42 Portobello Road, Notting Hill, London W11",
     },
     {
       provider: catering._id,
@@ -210,6 +213,7 @@ async function main() {
       expiryEstimate: hours(72),
       urgencyLevel: "normal",
       location: { type: "Point", coordinates: [-0.1257, 51.5085] },
+      pickupAddress: "8 Southwark Street, Bankside, London SE1",
     },
     {
       provider: bakehouse._id,
@@ -226,6 +230,7 @@ async function main() {
       expiryEstimate: hours(48),
       urgencyLevel: "expiring_soon",
       location: { type: "Point", coordinates: [-0.1433, 51.5008] },
+      pickupAddress: "42 Portobello Road, Notting Hill, London W11",
     },
     {
       provider: catering._id,
@@ -242,6 +247,7 @@ async function main() {
       expiryEstimate: hours(240),
       urgencyLevel: "normal",
       location: { type: "Point", coordinates: [-0.1225, 51.5079] },
+      pickupAddress: "8 Southwark Street, Bankside, London SE1",
     },
     // ── International listings (idea 15): NYC, Karachi, Dubai ──
     {
@@ -259,6 +265,7 @@ async function main() {
       expiryEstimate: hours(72),
       urgencyLevel: "normal",
       location: { type: "Point", coordinates: [-74.0085, 40.7057] },
+      pickupAddress: "150 Essex Street, Lower East Side, New York, NY",
     },
     {
       provider: meadow._id,
@@ -275,6 +282,7 @@ async function main() {
       expiryEstimate: hours(48),
       urgencyLevel: "expiring_soon",
       location: { type: "Point", coordinates: [-73.9942, 40.7135] },
+      pickupAddress: "88 Orchard Street, New York, NY 10002",
     },
     {
       provider: karachiKitchen._id,
@@ -291,6 +299,7 @@ async function main() {
       expiryEstimate: hours(8),
       urgencyLevel: "urgent",
       location: { type: "Point", coordinates: [67.0099, 24.8428] },
+      pickupAddress: "Shop 4, Boat Basin, Clifton Block 5, Karachi",
     },
     {
       provider: dubaiHub._id,
@@ -307,6 +316,7 @@ async function main() {
       expiryEstimate: hours(240),
       urgencyLevel: "normal",
       location: { type: "Point", coordinates: [55.2708, 25.2048] },
+      pickupAddress: "Ground Floor, Zamzama Blvd, DHA Phase 5, Karachi",
     },
     {
       provider: dubaiIftar._id,
@@ -323,6 +333,7 @@ async function main() {
       expiryEstimate: hours(12),
       urgencyLevel: "expiring_soon",
       location: { type: "Point", coordinates: [55.2925, 25.2356] },
+      pickupAddress: "Shop 4, Boat Basin, Clifton Block 5, Karachi",
     },
   ];
 

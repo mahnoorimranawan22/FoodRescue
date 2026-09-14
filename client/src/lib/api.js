@@ -436,6 +436,95 @@ export const api = {
     );
   },
 
+  /** GET /listings/provider — provider's own listings with live claim info */
+  getProviderListings(scope) {
+    return withFallback(
+      () => apiFetch(`/listings/provider${scope === "all" ? "?scope=all" : ""}`),
+      () => {
+        const items = readLS(LS_LISTINGS, DEMO_LISTINGS);
+        const claims = readLS(LS_CLAIMS, []);
+        const byListing = {};
+        for (const c of claims) {
+          if (c.status === "reserved") {
+            (byListing[c.foodListing] = byListing[c.foodListing] || []).push({
+              _id: c._id,
+              recipientName: c.recipientName || "Recipient",
+              pickupCode: c.pickupCode,
+              claimedAt: c.claimedAt,
+            });
+          }
+        }
+        const wanted = scope === "all" ? null : ["available", "reserved"];
+        return {
+          listings: items
+            .filter((l) => !wanted || wanted.includes(l.status))
+            .map((l) => ({ ...l, activeClaims: byListing[l._id] || [] })),
+        };
+      }
+    );
+  },
+
+  /** DELETE /listings/:id — provider cancels their own listing */
+  cancelListing(listingId) {
+    return withFallback(
+      () => apiFetch(`/listings/${listingId}`, { method: "DELETE" }),
+      () => {
+        const items = readLS(LS_LISTINGS, DEMO_LISTINGS);
+        const listing = items.find((l) => l._id === listingId);
+        if (listing) listing.status = "cancelled";
+        writeLS(LS_LISTINGS, items);
+        return { listing };
+      }
+    );
+  },
+
+  /** PATCH /claims/:id/received — recipient self-confirms a pickup (no-op in demo mode) */
+  confirmReceived(claimId) {
+    return withFallback(
+      () => apiFetch(`/claims/${claimId}/received`, { method: "PATCH", body: "{}" }),
+      () => {
+        const claims = readLS(LS_CLAIMS, []);
+        const claim = claims.find((c) => c._id === claimId);
+        if (!claim || claim.status !== "reserved") {
+          throw new Error("Claim is not reserved (already picked up or cancelled)");
+        }
+        claim.status = "picked_up";
+        claim.pickedUpAt = new Date().toISOString();
+        writeLS(LS_CLAIMS, claims);
+        const items = readLS(LS_LISTINGS, DEMO_LISTINGS);
+        const listing = items.find((l) => l._id === claim.foodListing);
+        if (listing) listing.status = "completed";
+        writeLS(LS_LISTINGS, items);
+        bumpStats({
+          mealsRescued: Number(listing?.quantity) || 1,
+          co2SavedTons: (Number(listing?.weightKg) || 2.5) * 0.0025,
+        });
+        return { claim };
+      }
+    );
+  },
+
+  /** PATCH /claims/:id/cancel — recipient releases a reservation */
+  cancelClaim(claimId) {
+    return withFallback(
+      () => apiFetch(`/claims/${claimId}/cancel`, { method: "PATCH", body: "{}" }),
+      () => {
+        const claims = readLS(LS_CLAIMS, []);
+        const claim = claims.find((c) => c._id === claimId);
+        if (!claim || claim.status !== "reserved") {
+          throw new Error("Reserved claim not found");
+        }
+        claim.status = "cancelled";
+        writeLS(LS_CLAIMS, claims);
+        const items = readLS(LS_LISTINGS, DEMO_LISTINGS);
+        const listing = items.find((l) => l._id === claim.foodListing);
+        if (listing) listing.status = "available";
+        writeLS(LS_LISTINGS, items);
+        return { claim };
+      }
+    );
+  },
+
   /** PATCH /claims/:id/pickup — confirm handover with the 4-digit code */
   confirmPickup(claimId, code) {
     return withFallback(
@@ -498,11 +587,18 @@ export const api = {
   /** POST /auth/login — returns { token, user } */
   login(email, password) {
     return withFallback(
-      () =>
-        apiFetch("/auth/login", {
+      async () => {
+        const data = await apiFetch("/auth/login", {
           method: "POST",
           body: JSON.stringify({ email, password }),
-        }),
+        });
+        // Persist the JWT here — the api client owns its storage keys, so
+        // sessions survive reloads no matter which caller logs in.
+        if (data?.token) {
+          try { localStorage.setItem("foodrescue.token", data.token); } catch { /* ignore */ }
+        }
+        return data;
+      },
       () => {
         // Demo auth: any email/password combination is accepted offline.
         const user = {
@@ -522,11 +618,16 @@ export const api = {
   /** POST /auth/register */
   register(payload) {
     return withFallback(
-      () =>
-        apiFetch("/auth/register", {
+      async () => {
+        const data = await apiFetch("/auth/register", {
           method: "POST",
           body: JSON.stringify(payload),
-        }),
+        });
+        if (data?.token) {
+          try { localStorage.setItem("foodrescue.token", data.token); } catch { /* ignore */ }
+        }
+        return data;
+      },
       () => {
         const user = {
           name: payload.name,
@@ -559,6 +660,22 @@ export const api = {
     localStorage.removeItem(LS_SESSION);
   },
 
+  /**
+   * POST /ai/classify — Groq-powered food classification (category, shelf
+   * life, urgency, summary). Falls back to the local keyword heuristic in
+   * demo mode; callers should also handle 401 (anonymous) themselves.
+   */
+  classifyFood(description) {
+    return withFallback(
+      () =>
+        apiFetch("/ai/classify", {
+          method: "POST",
+          body: JSON.stringify({ description }),
+        }),
+      () => ({ classification: null }) // demo mode: caller uses local heuristic
+    );
+  },
+
   /** GET /stats — public impact counters */
   getStats() {
     return withFallback(
@@ -571,6 +688,47 @@ export const api = {
           (sum, l) => sum + (Number(l.quantity) || 0),
           60 + claims.filter((c) => c.status === "picked_up").length * 12
         );
+        // Leaderboard (demo): top providers by "rescued" quantity
+        const byProvider = {};
+        for (const l of items) {
+          const name = l.providerName || "Local provider";
+          byProvider[name] = byProvider[name] || { meals: 0, kg: 0, rescues: 0 };
+          byProvider[name].meals += Number(l.quantity) || 0;
+          byProvider[name].kg += Number(l.weightKg) || 0;
+          byProvider[name].rescues += 1;
+        }
+        const BADGES = [
+          { min: 25, label: "🥇 Top Contributor" },
+          { min: 10, label: "🏅 Food Saver" },
+          { min: 1, label: "🌱 Waste Reducer" },
+        ];
+        const leaderboard = Object.entries(byProvider)
+          .sort((a, b) => b[1].meals - a[1].meals)
+          .slice(0, 8)
+          .map(([name, s], i) => ({
+            rank: i + 1,
+            name,
+            meals: s.meals,
+            kg: Math.round(s.kg * 10) / 10,
+            rescues: s.rescues,
+            badge: (BADGES.find((b) => s.meals >= b.min) || BADGES[2]).label,
+          }));
+
+        // Monthly trend (demo): the launch growth curve, live stacked on top
+        const DIST = [0.1, 0.12, 0.15, 0.18, 0.2, 0.25];
+        const KG_PER_MEAL = 0.59;
+        const monthly = DIST.map((share, i) => {
+          const d = new Date();
+          d.setMonth(d.getMonth() - (5 - i));
+          const meals = Math.round((12480 + portions) * share);
+          return {
+            month: d.toISOString().slice(0, 7),
+            label: d.toLocaleString("en", { month: "short" }),
+            meals,
+            kg: Math.round(meals * KG_PER_MEAL * 10) / 10,
+          };
+        });
+
         return {
           mealsRescued: 12480 + portions + (bonus.mealsRescued || 0),
           partners: 96,
@@ -579,6 +737,14 @@ export const api = {
             Math.round((18.4 + (bonus.co2SavedTons || 0)) * 10) / 10,
           listingsAvailable: items.filter((l) => l.status === "available")
             .length,
+          kgDiverted:
+            Math.round(
+              ((18.4 * 1000) / 2.5 +
+                items.reduce((s, l) => s + (Number(l.weightKg) || 0), 0)) *
+                10
+            ) / 10,
+          leaderboard,
+          monthly,
         };
       }
     );
@@ -589,19 +755,30 @@ export const api = {
    * to light polling in demo mode so the UI still feels alive. Returns a
    * disconnect function.
    */
-  subscribeFeed({ onUpdate, onError }) {
+  subscribeFeed({ onUpdate, onError, onCreated, onClaimed }) {
     let dispose = () => {};
     (async () => {
       try {
         const { io } = await import("socket.io-client");
         // Derive ws origin from API_BASE (http://localhost:5001/api → :5001)
         const wsOrigin = API_BASE.replace(/\/api\/?$/, "");
-        const socket = io(wsOrigin, { transports: ["websocket"], timeout: 4000 });
+        // Real JWTs authenticate the socket into the user's private room so
+        // targeted events (listing:created / listing:claimed) arrive; demo
+        // tokens are skipped — the server would just reject them.
+        const token = localStorage.getItem("foodrescue.token");
+        const socket = io(wsOrigin, {
+          transports: ["websocket"],
+          timeout: 4000,
+          auth: token && !token.startsWith("demo.") ? { token } : undefined,
+        });
         let connected = false;
         socket.on("connect", () => {
           connected = true;
         });
         socket.on("listings:update", (payload) => onUpdate?.(payload));
+        // Private-room notifications (see server/services/socket.js)
+        socket.on("listing:created", (payload) => onCreated?.(payload));
+        socket.on("listing:claimed", (payload) => onClaimed?.(payload));
         socket.on("connect_error", () => {
           if (!connected) startPolling();
         });

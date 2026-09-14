@@ -8,7 +8,13 @@ import SettingsMenu from "./SettingsMenu";
  * auth-aware actions, the international settings menu, dark-mode toggle,
  * and a slide-down mobile menu.
  */
-export default function Navbar({ onLogin, onListSurplus, onOpenImpact }) {
+export default function Navbar({
+  onLogin,
+  onListSurplus,
+  onOpenImpact,
+  onImpactPage,
+  onDashboard,
+}) {
   const { user, logout } = useAuth();
   const { t, theme, toggleTheme } = useSettings();
   const [scrolled, setScrolled] = useState(false);
@@ -66,17 +72,15 @@ export default function Navbar({ onLogin, onListSurplus, onOpenImpact }) {
               </a>
             </li>
           ))}
-          {user && (
-            <li>
-              <button
-                type="button"
-                onClick={onOpenImpact}
-                className={`${linkCls} nav-underline`}
-              >
-                {t("navImpact")}
-              </button>
-            </li>
-          )}
+          <li>
+            <button
+              type="button"
+              onClick={onImpactPage || onOpenImpact}
+              className={`${linkCls} nav-underline`}
+            >
+              {t("navImpact")}
+            </button>
+          </li>
         </ul>
 
         {/* Desktop actions */}
@@ -98,6 +102,13 @@ export default function Navbar({ onLogin, onListSurplus, onOpenImpact }) {
                 className="rounded-full px-3 py-2 text-sm font-semibold text-forest-600/70 transition-colors hover:text-warm-orange-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-warm-orange-500 dark:text-cream-100/60"
               >
                 {t("navLogout")}
+              </button>
+              <button
+                type="button"
+                onClick={onDashboard}
+                className="rounded-full border-2 border-forest-500/30 bg-white/70 px-4 py-2 text-sm font-bold text-forest-600 transition-all hover:border-forest-500 hover:bg-forest-500/10 dark:bg-night-100 dark:text-cream-100"
+              >
+                📊 Dashboard
               </button>
             </>
           ) : (
@@ -213,6 +224,18 @@ export default function Navbar({ onLogin, onListSurplus, onOpenImpact }) {
           </li>
         </ul>
         <div className="flex flex-col gap-3 border-t border-cream-200/80 px-4 py-4 dark:border-white/10">
+          {user && (
+            <button
+              type="button"
+              onClick={() => {
+                setMobileOpen(false);
+                onDashboard?.();
+              }}
+              className="rounded-full border border-forest-500/30 px-5 py-2.5 text-sm font-bold text-forest-600 transition-colors hover:bg-forest-500/10 dark:text-cream-100"
+            >
+              📊 Dashboard
+            </button>
+          )}
           {user ? (
             <button
               type="button"

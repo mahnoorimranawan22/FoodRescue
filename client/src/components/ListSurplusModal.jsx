@@ -75,17 +75,39 @@ export default function ListSurplusModal({ open, onClose, onCreated }) {
   const set = (key) => (e) =>
     setForm((f) => ({ ...f, [key]: e.target.value }));
 
-  /* Smart Assist (idea 17): infer fields from the title as the user types */
+  /* Smart Assist (idea 17): infer fields from the title as the user types.
+   * Tries the server's Groq endpoint first (real LLM classification); falls
+   * back to the instant local heuristic in demo mode / when offline. */
   useEffect(() => {
     if (!form.title || form.title.trim().length < 4) {
       setSmart(null);
       return;
     }
-    const id = setTimeout(() => {
-      const suggestion = smartAssist({
-        title: form.title,
-        quantity: form.quantity,
-      });
+    let cancelled = false;
+    const id = setTimeout(async () => {
+      let suggestion = null;
+      try {
+        const { classification } = await api.classifyFood(form.title);
+        if (classification) {
+          suggestion = {
+            category: classification.category,
+            unit: form.unit,
+            urgencyLevel: classification.urgency,
+            tags: [],
+            imageUrl: CATEGORY_IMAGES[classification.category],
+            summary: classification.summary,
+          };
+        }
+      } catch {
+        /* offline / anonymous / demo mode — local heuristic below */
+      }
+      if (cancelled) return;
+      if (!suggestion) {
+        suggestion = smartAssist({
+          title: form.title,
+          quantity: form.quantity,
+        });
+      }
       if (!suggestion) {
         setSmart(null);
         return;
@@ -104,7 +126,10 @@ export default function ListSurplusModal({ open, onClose, onCreated }) {
         };
       });
     }, 450);
-    return () => clearTimeout(id);
+    return () => {
+      clearTimeout(id);
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.title]);
 
@@ -194,6 +219,11 @@ export default function ListSurplusModal({ open, onClose, onCreated }) {
               unit: smart.unit,
               urgency: smart.urgencyLevel,
             })}
+            {smart.summary && (
+              <p className="mt-1 font-medium text-forest-600/80 dark:text-cream-100/70">
+                ✨ {smart.summary}
+              </p>
+            )}
           </div>
         )}
 

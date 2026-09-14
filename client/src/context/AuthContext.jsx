@@ -21,12 +21,20 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (email, password) => {
     const { token, user: u, demo } = await api.login(email, password);
+    // Persist the JWT so sessions survive reloads (the demo fallback stores
+    // its own token inside api.js; the real path must do the same here).
+    if (token) {
+      try { localStorage.setItem("foodrescue.token", token); } catch { /* ignore */ }
+    }
     setUser(u);
     return { user: u, demo };
   }, []);
 
   const register = useCallback(async (payload) => {
     const { token, user: u, demo } = await api.register(payload);
+    if (token) {
+      try { localStorage.setItem("foodrescue.token", token); } catch { /* ignore */ }
+    }
     setUser(u);
     return { user: u, demo };
   }, []);

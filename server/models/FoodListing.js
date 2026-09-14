@@ -119,6 +119,12 @@ const foodListingSchema = new mongoose.Schema(
       type: pickupWindowSchema,
       required: [true, "Pickup window is required"],
     },
+    // Human-readable handover point shown to recipients (with the map pin)
+    pickupAddress: {
+      type: String,
+      trim: true,
+      maxLength: [200, "Address too long"],
+    },
     expiryEstimate: {
       type: Date,
       required: [true, "Expiry estimate is required"],

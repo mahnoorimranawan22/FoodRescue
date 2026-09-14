@@ -8,7 +8,7 @@ const express = require("express");
 const http = require("http");
 const config = require("./config");
 const { connectDB, isConnected } = require("./config/db");
-const { initRealtime } = require("./realtime");
+const { initSockets } = require("./services/socket");
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -37,9 +37,10 @@ app.use((req, res, next) => {
 
 // ── Routes ──────────────────────────────────────────────────────────────
 app.use("/api/auth", require("./routes/authRoutes"));
-app.use("/api/listings", require("./routes/listings"));
-app.use("/api/claims", require("./routes/claims"));
+app.use("/api/listings", require("./routes/listingRoutes"));
+app.use("/api/claims", require("./routes/claimRoutes"));
 app.use("/api/stats", require("./routes/stats"));
+app.use("/api/ai", require("./routes/aiRoutes"));
 
 app.get("/api/health", (_req, res) => {
   res.json({
@@ -70,9 +71,10 @@ async function start() {
     );
   }
 
-  // idea 6 — attach Socket.io to the HTTP server for the live feed
+  // Attach Socket.io to the HTTP server: global feed + private user rooms
+  // for targeted `listing:created` / `listing:claimed` notifications.
   const server = http.createServer(app);
-  initRealtime(server);
+  initSockets(server);
   server.listen(config.PORT, () => {
     console.log(`[api] FoodRescue API listening on http://localhost:${config.PORT}`);
   });
