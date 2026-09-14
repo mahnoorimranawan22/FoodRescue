@@ -253,10 +253,49 @@ function writeLS(key, value) {
   }
 }
 
+// Bump when the demo dataset shape changes so returning visitors get fresh
+// data instead of silently filtering an outdated set to zero.
+const DEMO_VERSION = 3;
+
 async function seedDemo() {
-  // Re-seed when the stored demo data predates a schema change (e.g. tags)
+  // Re-seed when the stored demo data predates the current dataset version.
+  // (The old gate — "has tags?" — never fired for visitors between schema
+  // changes, leaving them with listings that no longer match new filters
+  // like cityId, or whose pickup windows expired days ago → empty Discover.)
   const existing = readLS(LS_LISTINGS, null);
-  if (!existing || !existing[0]?.tags) writeLS(LS_LISTINGS, DEMO_LISTINGS);
+  if (!existing || existing[0]?._v !== DEMO_VERSION) {
+    writeLS(
+      LS_LISTINGS,
+      DEMO_LISTINGS.map((l) => ({ ...l, _v: DEMO_VERSION }))
+    );
+  } else {
+    // Same-version data: roll any expired pickup windows forward so the
+    // demo feed always shows rescuable food, even weeks after the last visit.
+    const now = Date.now();
+    let changed = false;
+    const fresh = existing.map((l) => {
+      const end = new Date(l.pickupWindow?.end).getTime();
+      if (l.status === "available" && Number.isFinite(end) && end < now) {
+        changed = true;
+        const duration = Math.max(
+          2 * 36e5,
+          end - new Date(l.pickupWindow?.start).getTime()
+        );
+        return {
+          ...l,
+          pickupWindow: {
+            start: new Date(now + 36e5).toISOString(),
+            end: new Date(now + 36e5 + duration).toISOString(),
+          },
+          expiryEstimate: new Date(
+            now + Math.max(duration, 24 * 36e5)
+          ).toISOString(),
+        };
+      }
+      return l;
+    });
+    if (changed) writeLS(LS_LISTINGS, fresh);
+  }
   const existingClaims = readLS(LS_CLAIMS, null);
   if (!existingClaims) writeLS(LS_CLAIMS, DEMO_CLAIMS);
 }
