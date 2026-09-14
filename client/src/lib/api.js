@@ -302,6 +302,13 @@ async function seedDemo() {
 
 /** Wraps a live call with a demo fallback when the server is unreachable. */
 async function withFallback(liveFn, demoFn) {
+  // Static hosting (GitHub Pages etc.) can never have the API at localhost —
+  // go straight to demo mode instead of timing out against the visitor's
+  // own machine (and tripping CORS console noise) on every call.
+  if (typeof window !== "undefined" && window.location.hostname.endsWith(".github.io")) {
+    await seedDemo();
+    return demoFn();
+  }
   try {
     return await liveFn();
   } catch (err) {
